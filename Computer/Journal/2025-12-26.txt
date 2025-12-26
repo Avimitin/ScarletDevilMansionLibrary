@@ -1,0 +1,33 @@
+Sv32 Reading Notes
+==================
+- Sv32 is a mode setting of how to translate a supervisor memory address to
+  machine memory address.
+- This mode require implementation supports 32-bit supervisor virtual memory
+  address space.
+- Sv32 is enabled by setting "satp" CSR's MODE field.
+- Sv32 memory management is based on pages.
+- There are two level address translation: first an requested "supervisor
+  virtual address", then the translated "supervisor physical address", the
+  "supervisor physical address" is checked agains PMP, and finally be used as the
+  actual machine physical address.
+- In a system without a hypervisor, SPA and MPA are usually the exact same
+  number bits-wise.
+- Sv32 mode defined 22-bit physical page number fields, with each page 4KiB length,
+  it supports `2^22 * 2^12 = 2^34` physical memory address space.
+- If necessary, supervisor physical memory is zero-extended to the physical
+  address bits.
+  - In SoC design, ISA XLEN is decoupled with actual memory address range. An
+  SoC can supports up to 16GiB instead of 4GiB memory range with 34-bit wide bus.
+  User 32-bit address request is here to be translated into 34-bit address.
+
+In conclusion, Sv32 is a mode of how micro-architecture manage virtual address
+to physical address translation. In Sv32, implementation views the whole bus
+address to be divided to multiple pages with 4KiB size. Each Page Table Entry
+holds location and permission description of a range of memory index by page
+number. A Page Table is a pseudo concept that describe the collection of PTE.
+In Sv32, the Page Table is designed to holds 2^10 PTE, which fills a page
+perfectly by design.
+
+- A PTE has 22-bit PPN so it can describe any 4KiB page in memory.
+- PTE allocation is software job. It is supervisor level software responsibility
+  to manage PTE.
