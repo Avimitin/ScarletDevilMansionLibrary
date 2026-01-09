@@ -31,3 +31,47 @@ perfectly by design.
 - A PTE has 22-bit PPN so it can describe any 4KiB page in memory.
 - PTE allocation is software job. It is supervisor level software responsibility
   to manage PTE.
+
+satp is only active in S/U mode.
+
+translate(requestType, va) => pa
+
+if not isActive(satp) then return va
+if satp.MODE == 0 then return va
+
+let sv32Lvl = 2 in
+let pageSize = 4096b in
+let a = satp.PPN x pageSize in
+let i = sv32Lvl - 1 in
+:rec
+let pteAddr = a + (va.VPN[i] * 4) in
+if not checkPMA(pteAddr) then raise AccessFault
+if not checkPMP(pteAddr) then raise AccessFault
+
+let pte = loadWord(pteAddr) in
+if pte.v == 0 || (pte.r == 0 && pte.w == 1) || reservedBitNotClear(pte) then raise PageFault
+if pte.r != 1 && pte.x != 1 then
+    let i = i - 1 in
+    if i < 0 then raise PageFault
+    a = pte.PPN x pageSize
+    goto :rec
+if i > 0 && (pte.PPN[i-1:0]) != 0 then raise PageFault
+if not isValidAccess(pte.U, currentPrivilege, mstatus.SUM, mstatus.MXR) then raise PageFault
+if hasExtension(Zicfiss) then
+    if not isValidShadowStackRequest(requestType, pte.R, pte.W, pte.X) then raise AccessFault
+if not isValidRequest(requestType, pte.R, pte.W, pte.X) then raise PageFault
+if pte.A == 0 || (requestType == StoreType and pte.D == 0) then
+    if hasExtension(Svade) then raise PageFault
+    if not checkStorePmaPmp(pteAddr) then raise AccessFault
+    let current = loadWord(pteAddr) in
+    atomicCompareAndSwapWithExtraOp(pte, current, \pte ->
+        pte.A = 1
+        if requestType == StoreType then
+            pte.D = 1
+    )
+let pa = 0 in
+pa.PGOFF = va.PGOFF
+if i > 0 then
+    pa.PPN[i-1:0] = va.VPN[i-1:0]
+pa.PPN[sv32Lvl-1:i] = pte.PPN[sv32Lvl-1:i]
+return pa
